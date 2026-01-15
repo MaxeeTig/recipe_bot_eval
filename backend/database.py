@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Optional, List, Dict, Any
 from backend.config import DATABASE_PATH
 from backend.logger import get_logger
+from backend.models.recipe import Recipe
 
 logger = get_logger(__name__)
 
@@ -44,10 +45,24 @@ def init_database():
                 tavily_response TEXT NOT NULL,
                 selected_result_index INTEGER NOT NULL,
                 status TEXT NOT NULL DEFAULT 'stored',
+                parsed_recipe TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             )
         """)
+        
+        # Migration: Add parsed_recipe column if it doesn't exist (for existing databases)
+        # Check if column exists by querying table info
+        cursor.execute("PRAGMA table_info(recipes)")
+        columns = [column[1] for column in cursor.fetchall()]
+        
+        if "parsed_recipe" not in columns:
+            try:
+                cursor.execute("ALTER TABLE recipes ADD COLUMN parsed_recipe TEXT")
+                logger.info("Added parsed_recipe column to existing database")
+            except sqlite3.OperationalError as e:
+                # Column might have been added by another process, ignore
+                logger.debug("parsed_recipe column already exists or error adding", extra={"error": str(e)})
         
         conn.commit()
         conn.close()
@@ -81,14 +96,15 @@ def create_recipe(
         now = datetime.utcnow().isoformat()
         
         cursor.execute("""
-            INSERT INTO recipes (id, query, tavily_response, selected_result_index, status, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO recipes (id, query, tavily_response, selected_result_index, status, parsed_recipe, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             recipe_id,
             query,
             json.dumps(tavily_response, ensure_ascii=False),
             selected_result_index,
             status,
+            None,  # parsed_recipe initially None
             now,
             now
         ))
@@ -216,3 +232,49 @@ def delete_recipe(recipe_id: str) -> bool:
         logger.warning("Recipe not found for deletion", extra={"recipe_id": recipe_id})
     
     return success
+
+
+def update_parsed_recipe(recipe_id: str, parsed_recipe: Recipe) -> Optional[Dict[str, Any]]:
+    """
+    Update parsed recipe data for a recipe.
+    
+    Args:
+        recipe_id: Recipe ID
+        parsed_recipe: Parsed Recipe object
+        
+    Returns:
+        Updated recipe dict or None if not found
+    """
+    logger.debug(
+        "Updating parsed recipe",
+        extra={"recipe_id": recipe_id, "recipe_title": parsed_recipe.title}
+    )
+    
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        now = datetime.utcnow().isoformat()
+        parsed_recipe_json = parsed_recipe.to_json()
+        
+        cursor.execute("""
+            UPDATE recipes 
+            SET parsed_recipe = ?, updated_at = ?, status = ?
+            WHERE id = ?
+        """, (parsed_recipe_json, now, "parsed", recipe_id))
+        
+        conn.commit()
+        conn.close()
+        
+        logger.info(
+            "Parsed recipe updated successfully",
+            extra={"recipe_id": recipe_id, "recipe_title": parsed_recipe.title}
+        )
+        return get_recipe(recipe_id)
+    except Exception as e:
+        logger.error(
+            "Failed to update parsed recipe",
+            exc_info=True,
+            extra={"recipe_id": recipe_id, "error": str(e)}
+        )
+        raise

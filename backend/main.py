@@ -15,9 +15,12 @@ from backend.database import (
     create_recipe,
     get_recipe,
     get_all_recipes,
-    delete_recipe as db_delete_recipe
+    delete_recipe as db_delete_recipe,
+    update_parsed_recipe
 )
 from backend.tavily_service import search_recipes, select_best_result
+from backend.recipe_parser import parse_recipe
+from backend.models.recipe import Recipe
 from backend.logger import setup_logging, get_logger, set_request_id, get_request_id
 
 # Setup logging
@@ -331,6 +334,112 @@ async def delete_recipe(recipe_id: str):
             extra={"recipe_id": recipe_id, "error": str(e)}
         )
         raise HTTPException(status_code=500, detail=f"Error deleting recipe: {str(e)}")
+
+
+@app.post("/api/recipes/{recipe_id}/parse")
+async def parse_recipe_endpoint(recipe_id: str):
+    """
+    Parse a recipe using LLM.
+    Extracts recipe text from stored Tavily response and parses it into structured format.
+    """
+    logger.info("Recipe parse requested", extra={"recipe_id": recipe_id})
+    
+    try:
+        # Get recipe from database
+        recipe = get_recipe(recipe_id)
+        
+        if not recipe:
+            logger.warning(
+                "Recipe not found for parsing",
+                extra={"recipe_id": recipe_id}
+            )
+            raise HTTPException(status_code=404, detail="Recipe not found")
+        
+        # Parse Tavily response
+        tavily_response = json.loads(recipe["tavily_response"])
+        selected_index = recipe["selected_result_index"]
+        selected_result = tavily_response.get("results", [])[selected_index]
+        
+        if not selected_result:
+            logger.warning(
+                "Selected result not found in Tavily response",
+                extra={"recipe_id": recipe_id, "selected_index": selected_index}
+            )
+            raise HTTPException(
+                status_code=404,
+                detail="Selected recipe result not found"
+            )
+        
+        # Extract recipe text and URL
+        recipe_text = selected_result.get("content", "")
+        source_url = selected_result.get("url", "")
+        
+        if not recipe_text:
+            logger.warning(
+                "Recipe text is empty",
+                extra={"recipe_id": recipe_id}
+            )
+            raise HTTPException(
+                status_code=400,
+                detail="Recipe text is empty, cannot parse"
+            )
+        
+        logger.debug(
+            "Extracted recipe text for parsing",
+            extra={
+                "recipe_id": recipe_id,
+                "text_length": len(recipe_text),
+                "source_url": source_url
+            }
+        )
+        
+        # Parse recipe using LLM
+        parsed_recipe = parse_recipe(
+            recipe_text=recipe_text,
+            source_url=source_url
+        )
+        
+        # Store parsed recipe in database
+        update_parsed_recipe(recipe_id, parsed_recipe)
+        
+        logger.info(
+            "Recipe parsed successfully",
+            extra={
+                "recipe_id": recipe_id,
+                "recipe_title": parsed_recipe.title,
+                "ingredient_count": len(parsed_recipe.ingredients)
+            }
+        )
+        
+        # Return parsed recipe as JSON
+        return {
+            "id": recipe_id,
+            "parsed_recipe": parsed_recipe.dict(),
+            "status": "parsed"
+        }
+    
+    except HTTPException:
+        raise
+    except ValueError as e:
+        logger.error(
+            "Recipe parsing validation error",
+            exc_info=True,
+            extra={"recipe_id": recipe_id, "error": str(e)}
+        )
+        raise HTTPException(
+            status_code=422,
+            detail=f"Recipe parsing validation error: {str(e)}"
+        )
+    except Exception as e:
+        logger.error(
+            "Error parsing recipe",
+            exc_info=True,
+            extra={"recipe_id": recipe_id, "error": str(e)}
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error parsing recipe: {str(e)}"
+        )
 
 
 if __name__ == "__main__":
