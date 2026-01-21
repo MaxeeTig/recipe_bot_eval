@@ -68,11 +68,17 @@ export function RecipeHistoryItem({ recipe, isSelected, onSelect, onView, onDele
         <div className="flex items-center gap-2 mb-1">
           {statusIcons[recipe.status]}
           <button
-            onClick={() => recipe.status === 'processed' && onView(recipe.id)}
-            className="hover:underline text-left truncate"
-            disabled={recipe.status !== 'processed'}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              if (recipe.status !== 'deleted') {
+                onView(recipe.id);
+              }
+            }}
+            className="hover:underline text-left truncate cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={recipe.status === 'deleted'}
           >
-            <span className={recipe.status === 'processed' ? 'cursor-pointer' : 'cursor-default'}>
+            <span>
               {recipe.dishName}
             </span>
           </button>

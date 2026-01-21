@@ -37,7 +37,7 @@ export function HomePage({ recipes, onSearch, onSelectRecipe, onRerunRecipes, on
       <div className="space-y-2">
         <h1>Поиск рецептов</h1>
         <p className="text-muted-foreground">
-          Введите название блюда или ингредиенты для поиска через Tavily
+          Введите название блюда для поиска на russianfood.com
         </p>
       </div>
 

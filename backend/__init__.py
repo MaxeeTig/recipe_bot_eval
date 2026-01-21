@@ -1,1 +1,1 @@
-# Backend package
+"""Backend package for recipe search and management API."""

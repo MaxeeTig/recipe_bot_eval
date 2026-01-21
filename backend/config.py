@@ -1,88 +1,73 @@
-# =============================================================================
-# CONFIGURATION SECTION - Easy model and provider switching
-# =============================================================================
-
+"""
+Configuration loader for FastAPI backend.
+Imports settings from config_section.py and adds FastAPI-specific configuration.
+"""
 import os
-import logging
 from pathlib import Path
 from dotenv import load_dotenv
+import sys
 
-# Load environment variables from .env file
+# Add parent directory to path to import config_section
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+# Import all config from config_section
+from config_section import (
+    DATA_DIR,
+    DB_PATH,
+    LLM_PROVIDER,
+    TOGETHER_AI_API_KEY_ENV_VAR,
+    TOGETHER_AI_API_BASE_URL,
+    TOGETHER_AI_AVAILABLE_MODELS,
+    VERCEL_AI_API_KEY_ENV_VAR,
+    VERCEL_AI_API_BASE_URL,
+    VERCEL_AI_AVAILABLE_MODELS,
+    MISTRAL_AI_API_KEY_ENV_VAR,
+    MISTRAL_AI_API_BASE_URL,
+    MISTRAL_AI_AVAILABLE_MODELS,
+    DEEPSEEK_AI_API_KEY_ENV_VAR,
+    DEEPSEEK_AI_API_BASE_URL,
+    DEEPSEEK_AI_AVAILABLE_MODELS,
+    DEFAULT_MODEL,
+    DEFAULT_ANALYSIS_MODEL,
+    SYSTEM_PROMPT_FILE,
+    ERROR_ANALYSIS_PROMPT_FILE,
+    LLM_TEMPERATURE,
+    AUTO_ANALYZE_FAILURES,
+    MAX_SUCCESSFUL_EXAMPLES,
+    BASE_URL,
+    SEARCH_URL,
+    IMPLICIT_WAIT,
+    PAGE_LOAD_WAIT,
+    SEARCH_RESULTS_WAIT,
+    ELEMENT_WAIT_TIMEOUT,
+    MIN_TEXT_LENGTH_SHORT,
+    MIN_TEXT_LENGTH_LONG,
+    MAX_LIST_ITEMS,
+    MAX_PARAGRAPHS,
+    CHROME_HEADLESS,
+    CHROME_OPTIONS,
+    OUTPUT_DIR,
+    TIMESTAMP_FORMAT,
+    ALLOWED_UNITS,
+)
+
+# Load environment variables
 load_dotenv()
 
-# Base directory
-BASE_DIR = Path(__file__).parent.parent
+# FastAPI-specific settings
+API_HOST = os.getenv("API_HOST", "0.0.0.0")
+API_PORT = int(os.getenv("API_PORT", "8003"))
+API_RELOAD = os.getenv("API_RELOAD", "true").lower() == "true"
 
-# Database Configuration
-DATABASE_PATH = BASE_DIR / "data" / "recipes.db"
+# Logging settings
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+LOG_TO_FILE = os.getenv("LOG_TO_FILE", "true").lower() == "true"
+LOG_DIR = Path(__file__).parent.parent / "log"
+LOG_DIR.mkdir(exist_ok=True)
 
-# Tavily Search Configuration
-TAVILY_CONFIG = {
-    "api_key": os.getenv("TAVILY_API_KEY", "")
-}
+# Project root directory
+PROJECT_ROOT = Path(__file__).parent.parent
 
-# AI Gateway Configuration (for future use)
-AI_GATEWAY_CONFIG = {
-    "api_key": os.getenv("AI_GATEWAY_API_KEY", ""),
-    "base_url": "https://ai-gateway.vercel.sh/v1",
-    "timeout": 30.0
-}
-
-# Available Models - Add/remove models here for easy switching
-AVAILABLE_MODELS = {
-    # OpenAI Models
-    "gpt-4o": "openai/gpt-4o",
-    "gpt-4o-mini": "openai/gpt-4o-mini", 
-    "gpt-4-turbo": "openai/gpt-4-turbo",
-    
-    # Anthropic Models
-    "claude-3-5-sonnet": "anthropic/claude-3-5-sonnet-20241022",
-    "claude-3-5-haiku": "anthropic/claude-3-5-haiku-20241022",
-    "claude-3-opus": "anthropic/claude-3-opus-20240229",
-    
-    # Mistral Models
-    "mistral-large": "mistral/mistral-large-latest",
-    "mistral-medium": "mistral/mistral-medium-latest",
-    "mistral-small": "mistral/mistral-small-latest",
-    
-    # Google Models
-    "gemini-1.5-pro": "google/gemini-1.5-pro-latest",
-    "gemini-1.5-flash": "google/gemini-1.5-flash-latest",
-    
-    # Meta Models
-    "llama-3.1-405b": "meta/llama-3.1-405b-instruct",
-    "llama-3.1-70b": "meta/llama-3.1-70b-instruct",
-    "llama-3.1-8b": "meta/llama-3.1-8b-instruct",
-}
-
-# Default model selection - Change this to switch default model
-DEFAULT_MODEL = "gpt-4o-mini"  # Fast and cost-effective
-# DEFAULT_MODEL = "claude-3-5-sonnet"  # High quality reasoning
-# DEFAULT_MODEL = "mistral-large"  # Good balance
-
-# Model-specific configurations
-MODEL_CONFIGS = {
-    "openai/gpt-4o": {"max_tokens": 4096, "temperature": 0.3},
-    "openai/gpt-4o-mini": {"max_tokens": 2048, "temperature": 0.3},
-    "anthropic/claude-3-5-sonnet-20241022": {"max_tokens": 4096, "temperature": 0.3},
-    "anthropic/claude-3-5-haiku-20241022": {"max_tokens": 2048, "temperature": 0.3},
-    "mistral/mistral-large-latest": {"max_tokens": 2048, "temperature": 0.3},
-    "mistral/mistral-small-latest": {"max_tokens": 1024, "temperature": 0.3},
-}
-
-# Logging Configuration
-LOG_LEVEL_STR = os.getenv("LOG_LEVEL", "INFO").upper()
-LOG_DIR = BASE_DIR / "logs"
-ENABLE_FILE_LOGGING = os.getenv("ENABLE_FILE_LOGGING", "true").lower() == "true"
-
-# Map string log level to logging constant
-LOG_LEVEL_MAP = {
-    "DEBUG": logging.DEBUG,
-    "INFO": logging.INFO,
-    "WARNING": logging.WARNING,
-    "ERROR": logging.ERROR,
-    "CRITICAL": logging.CRITICAL,
-}
-
-# Convert string to logging level
-LOG_LEVEL = LOG_LEVEL_MAP.get(LOG_LEVEL_STR, logging.INFO)
+# File paths (relative to project root)
+SYSTEM_PROMPT_PATH = PROJECT_ROOT / SYSTEM_PROMPT_FILE
+ERROR_ANALYSIS_PROMPT_PATH = PROJECT_ROOT / ERROR_ANALYSIS_PROMPT_FILE

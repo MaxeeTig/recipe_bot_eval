@@ -32,30 +32,11 @@ export interface RecipeEntry {
   status: 'processed' | 'pending' | 'error' | 'deleted';
   source?: RecipeSource;
   recipeData?: RecipeData;
-  feedback?: RecipeFeedback;
-}
-
-export interface RecipeFeedback {
-  ingredientAccuracy: number;
-  dataCompleteness: number;
-  originalMatch: number;
-  overallQuality: number;
-  comments: string;
-  readyForProduction: boolean;
+  error?: { type: string; message: string };
 }
 
 export interface Settings {
-  tavilyApiKey: string;
-  openaiApiKey: string;
-  selectedModel: string;
-  systemPrompt: string;
-  temperature: number;
-  maxTokens: number;
-}
-
-export interface PromptVersion {
-  version: string;
-  date: string;
-  changes: string;
-  effectOnMetrics: string;
+  provider: string;
+  modelParsing: string;
+  modelAnalysis: string;
 }

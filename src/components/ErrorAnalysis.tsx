@@ -28,7 +28,10 @@ export function ErrorAnalysis({ topErrors }: ErrorAnalysisProps) {
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
-          {topErrors.map((error, index) => (
+          {topErrors.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Нет данных по типам ошибок</p>
+          ) : (
+          topErrors.map((error, index) => (
             <div key={error.type} className="space-y-2">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -54,7 +57,7 @@ export function ErrorAnalysis({ topErrors }: ErrorAnalysisProps) {
                 />
               </div>
             </div>
-          ))}
+          )))}
         </div>
       </CardContent>
     </Card>

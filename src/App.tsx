@@ -4,9 +4,11 @@ import { HomePage } from './components/HomePage';
 import { RecipeDetailPage } from './components/RecipeDetailPage';
 import { SettingsPanel } from './components/SettingsPanel';
 import { AnalyticsDashboard } from './components/AnalyticsDashboard';
-import { RecipeEntry, RecipeData, RecipeFeedback, Settings as SettingsType } from './types/recipe';
-import { mockRecipes, mockAnalytics, mockPromptVersions, defaultSettings } from './lib/mockData';
-import { api, RecipeApiResponse } from './lib/api';
+import type { RecipeEntry, Settings as SettingsType } from './types/recipe';
+import { mockRecipes, defaultSettings } from './lib/mockData';
+import { api } from './lib/api';
+import type { RecipeStatsResponse } from './lib/api';
+import { listItemToRecipeEntry, detailToRecipeEntry, searchResponseToRecipeEntry } from './lib/recipeTransform';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from './components/ui/tabs';
 import { Toaster } from './components/ui/sonner';
 import { toast } from 'sonner';
@@ -14,23 +16,7 @@ import { logger } from './lib/logger';
 
 type ViewMode = 'home' | 'detail' | 'settings' | 'analytics';
 
-// Convert API response to RecipeEntry
-function apiResponseToRecipeEntry(apiRecipe: RecipeApiResponse): RecipeEntry {
-  const selectedResult = apiRecipe.tavily_response.results[apiRecipe.selected_result_index];
-  
-  return {
-    id: apiRecipe.id,
-    query: apiRecipe.query,
-    dishName: selectedResult?.title || apiRecipe.query,
-    date: apiRecipe.created_at,
-    status: apiRecipe.status === 'deleted' ? 'deleted' : 'processed',
-    source: selectedResult ? {
-      url: selectedResult.url,
-      rawText: selectedResult.content,
-      searchQuery: apiRecipe.query
-    } : undefined
-  };
-}
+const EMPTY_STATS: RecipeStatsResponse = { total: 0, by_status: {}, by_error_type: {} };
 
 export default function App() {
   const [viewMode, setViewMode] = useState<ViewMode>('home');
@@ -40,6 +26,9 @@ export default function App() {
   const [isSearching, setIsSearching] = useState(false);
   const [activeTab, setActiveTab] = useState('home');
   const [isLoadingRecipes, setIsLoadingRecipes] = useState(true);
+  const [isLoadingRecipeDetail, setIsLoadingRecipeDetail] = useState(false);
+  const [stats, setStats] = useState<RecipeStatsResponse | null>(null);
+  const [statsLoading, setStatsLoading] = useState(false);
 
   // Load recipes from API on mount
   useEffect(() => {
@@ -47,104 +36,114 @@ export default function App() {
       try {
         setIsLoadingRecipes(true);
         logger.info('Loading recipes from API');
-        const apiRecipes = await api.getRecipes();
-        const recipeEntries = apiRecipes.map(apiResponseToRecipeEntry);
-        setRecipes(recipeEntries);
-        logger.info('Recipes loaded successfully', { count: recipeEntries.length });
-      } catch (error: any) {
-        logger.error('Failed to load recipes', { error }, error instanceof Error ? error : new Error(String(error)));
-        const errorMessage = error.code === 'ECONNABORTED' || error.message?.includes('timeout')
-          ? 'Таймаут подключения к серверу'
-          : error.response?.data?.detail || 'Проверьте подключение к серверу';
-        toast.error('Не удалось загрузить рецепты', {
-          description: errorMessage
-        });
+        const items = await api.getRecipes();
+        setRecipes(items.map(listItemToRecipeEntry));
+        logger.info('Recipes loaded successfully', { count: items.length });
+      } catch (error: unknown) {
+        const err = error instanceof Error ? error : new Error(String(error));
+        logger.error('Failed to load recipes', { error }, err);
+        const msg = (error as { code?: string; message?: string; response?: { data?: { detail?: string } } })?.response?.data?.detail
+          || ((error as { code?: string })?.code === 'ECONNABORTED' || (error as { message?: string })?.message?.includes('timeout')
+            ? 'Таймаут подключения к серверу'
+            : 'Проверьте подключение к серверу');
+        toast.error('Не удалось загрузить рецепты', { description: msg });
       } finally {
         setIsLoadingRecipes(false);
       }
     };
-
     loadRecipes();
   }, []);
+
+  // Fetch stats when Analytics tab is selected
+  useEffect(() => {
+    if (activeTab !== 'analytics') return;
+    let cancelled = false;
+    setStatsLoading(true);
+    api.getRecipeStats()
+      .then((s) => { if (!cancelled) setStats(s); })
+      .catch(() => { if (!cancelled) setStats(EMPTY_STATS); })
+      .finally(() => { if (!cancelled) setStatsLoading(false); });
+    return () => { cancelled = true; };
+  }, [activeTab]);
 
   const handleSearch = async (query: string) => {
     setIsSearching(true);
     logger.info('Recipe search initiated', { query });
-    
     try {
-      const apiRecipe = await api.searchRecipe(query);
-      const recipeEntry = apiResponseToRecipeEntry(apiRecipe);
-      
-      setRecipes((prev) => [recipeEntry, ...prev]);
-      
-      logger.info('Recipe search completed successfully', { 
-        recipeId: recipeEntry.id, 
-        query 
-      });
-      
+      const res = await api.searchRecipe(query);
+      const full = await api.getRecipe(String(res.recipe_id));
+      const entry = detailToRecipeEntry(full);
+      setRecipes((prev) => [entry, ...prev]);
+      logger.info('Recipe search completed successfully', { recipeId: entry.id, query });
       toast.success('Рецепт найден', {
-        description: `${query} успешно найден через Tavily`
+        description: `«${query}» найден на russianfood.com`
       });
-    } catch (error: any) {
-      logger.error(
-        'Recipe search failed', 
-        { 
-          query, 
-          errorMessage: error.response?.data?.detail || error.message,
-          statusCode: error.response?.status,
-          errorCode: error.code
-        }, 
-        error instanceof Error ? error : new Error(String(error))
-      );
-      const errorMessage = error.code === 'ECONNABORTED' || error.message?.includes('timeout')
+    } catch (error: unknown) {
+      const e = error as { code?: string; message?: string; response?: { data?: { detail?: string }; status?: number } };
+      logger.error('Recipe search failed', { query, errorMessage: e?.response?.data?.detail || e?.message, statusCode: e?.response?.status }, error instanceof Error ? error : new Error(String(error)));
+      const msg = e?.code === 'ECONNABORTED' || e?.message?.includes('timeout')
         ? 'Таймаут подключения к серверу'
-        : error.response?.data?.detail || 'Не удалось найти рецепт';
-      toast.error('Ошибка поиска', {
-        description: errorMessage
-      });
+        : e?.response?.data?.detail || 'Не удалось найти рецепт';
+      toast.error('Ошибка поиска', { description: msg });
     } finally {
       setIsSearching(false);
     }
   };
 
-  const handleSelectRecipe = (id: string) => {
+  const handleSelectRecipe = async (id: string) => {
     logger.debug('Recipe selected', { recipeId: id });
-    setSelectedRecipeId(id);
-    setViewMode('detail');
+    setIsLoadingRecipeDetail(true);
+    try {
+      let full = await api.getRecipe(id);
+      if (!full.parsed_recipe && full.status !== 'failure') {
+        logger.info('Recipe not parsed, triggering parse', { recipeId: id });
+        toast.info('Обработка рецепта', { description: 'Парсинг рецепта через LLM...' });
+        try {
+          await api.parseRecipe(id, {
+            model: settings.modelParsing || undefined,
+            provider: settings.provider || undefined,
+          });
+          full = await api.getRecipe(id);
+          toast.success('Рецепт обработан', { description: 'Рецепт успешно распарсен' });
+        } catch (parseErr: unknown) {
+          const pe = parseErr as { response?: { data?: { detail?: string } }; message?: string };
+          logger.error('Failed to parse recipe', { recipeId: id, errorMessage: pe?.response?.data?.detail || pe?.message }, parseErr instanceof Error ? parseErr : new Error(String(parseErr)));
+          toast.error('Ошибка обработки', { description: pe?.response?.data?.detail || 'Не удалось обработать рецепт' });
+        }
+      }
+      const entry = detailToRecipeEntry(full);
+      setRecipes((prev) => prev.map((r) => (r.id === id ? entry : r)));
+      setSelectedRecipeId(id);
+      setViewMode('detail');
+      logger.info('Recipe detail loaded successfully', { recipeId: id });
+    } catch (error: unknown) {
+      const e = error as { code?: string; message?: string; response?: { data?: { detail?: string }; status?: number } };
+      logger.error('Failed to load recipe detail', { recipeId: id, errorMessage: e?.response?.data?.detail || e?.message, statusCode: e?.response?.status }, error instanceof Error ? error : new Error(String(error)));
+      const msg = e?.code === 'ECONNABORTED' || e?.message?.includes('timeout')
+        ? 'Таймаут подключения к серверу'
+        : e?.response?.data?.detail || 'Не удалось загрузить рецепт';
+      toast.error('Ошибка загрузки', { description: msg });
+    } finally {
+      setIsLoadingRecipeDetail(false);
+    }
   };
 
-  const handleRerunRecipes = (ids: string[]) => {
+  const handleRerunRecipes = async (ids: string[]) => {
     logger.info('Rerunning recipes', { recipeIds: ids, count: ids.length });
-    // Simulate reprocessing
-    setRecipes((prev) =>
-      prev.map((r) => (ids.includes(r.id) ? { ...r, status: 'pending' as const } : r))
-    );
-
-    setTimeout(() => {
-      setRecipes((prev) =>
-        prev.map((r) =>
-          ids.includes(r.id) ? { ...r, status: 'processed' as const } : r
-        )
-      );
-      logger.info('Recipes rerun completed', { count: ids.length });
-      toast.success('Перезапуск завершён', {
-        description: `Обработано рецептов: ${ids.length}`
-      });
-    }, 2000);
-  };
-
-  const handleSaveFeedback = (
-    recipeId: string,
-    feedback: RecipeFeedback,
-    recipeData: RecipeData
-  ) => {
-    setRecipes((prev) =>
-      prev.map((r) =>
-        r.id === recipeId
-          ? { ...r, feedback, recipeData }
-          : r
-      )
-    );
+    try {
+      for (const id of ids) {
+        await api.parseRecipe(id, {
+          model: settings.modelParsing || undefined,
+          provider: settings.provider || undefined,
+        });
+      }
+      const items = await api.getRecipes();
+      setRecipes(items.map(listItemToRecipeEntry));
+      toast.success('Перезапуск завершён', { description: `Обработано рецептов: ${ids.length}` });
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { detail?: string } }; message?: string };
+      toast.error('Ошибка перезапуска', { description: e?.response?.data?.detail || e?.message || 'Ошибка' });
+    }
   };
 
   const handleBackToHome = () => {
@@ -157,49 +156,37 @@ export default function App() {
     logger.info('Deleting recipe', { recipeId: id });
     try {
       await api.deleteRecipe(id);
-      setRecipes((prev) =>
-        prev.map((r) =>
-          r.id === id ? { ...r, status: 'deleted' as const } : r
-        )
-      );
-      logger.info('Recipe deleted successfully', { recipeId: id });
-      toast.success('Рецепт удалён', {
-        description: 'Рецепт успешно удалён из списка'
-      });
-    } catch (error: any) {
-      logger.error(
-        'Failed to delete recipe', 
-        { 
-          recipeId: id,
-          errorMessage: error.response?.data?.detail || error.message,
-          statusCode: error.response?.status 
-        }, 
-        error instanceof Error ? error : new Error(String(error))
-      );
-      toast.error('Ошибка удаления', {
-        description: error.response?.data?.detail || 'Не удалось удалить рецепт'
-      });
+      setRecipes((prev) => prev.filter((r) => r.id !== id));
+      if (selectedRecipeId === id) {
+        setSelectedRecipeId(null);
+        setViewMode('home');
+        setActiveTab('home');
+      }
+      toast.success('Рецепт удалён', { description: 'Рецепт удалён из списка' });
+    } catch (error: unknown) {
+      const e = error as { response?: { data?: { detail?: string } }; message?: string };
+      toast.error('Ошибка удаления', { description: e?.response?.data?.detail || 'Не удалось удалить рецепт' });
     }
+  };
+
+  const handleRecipeUpdated = (entry: RecipeEntry) => {
+    setRecipes((prev) => prev.map((r) => (r.id === entry.id ? entry : r)));
+    setSelectedRecipeId(entry.id);
   };
 
   const selectedRecipe = recipes.find((r) => r.id === selectedRecipeId);
 
   const handleTabChange = (value: string) => {
     setActiveTab(value);
-    if (value === 'home') {
-      setViewMode('home');
-    } else if (value === 'settings') {
-      setViewMode('settings');
-    } else if (value === 'analytics') {
-      setViewMode('analytics');
-    }
+    if (value === 'home') setViewMode('home');
+    else if (value === 'settings') setViewMode('settings');
+    else if (value === 'analytics') setViewMode('analytics');
   };
 
   return (
     <div className="min-h-screen bg-background">
       <Toaster position="top-right" />
-      
-      {/* Header */}
+
       <header className="border-b bg-card">
         <div className="container mx-auto px-6 py-4">
           <div className="flex items-center gap-3">
@@ -214,13 +201,15 @@ export default function App() {
         </div>
       </header>
 
-      {/* Main Content */}
       <main className="container mx-auto px-6 py-8">
         {viewMode === 'detail' && selectedRecipe ? (
           <RecipeDetailPage
             recipe={selectedRecipe}
             onBack={handleBackToHome}
-            onSaveFeedback={handleSaveFeedback}
+            onRecipeUpdated={handleRecipeUpdated}
+            modelAnalysis={settings.modelAnalysis}
+            provider={settings.provider}
+            isLoading={isLoadingRecipeDetail}
           />
         ) : (
           <Tabs value={activeTab} onValueChange={handleTabChange}>
@@ -251,10 +240,11 @@ export default function App() {
             </TabsContent>
 
             <TabsContent value="analytics">
-              <AnalyticsDashboard
-                analytics={mockAnalytics}
-                promptVersions={mockPromptVersions}
-              />
+              {statsLoading ? (
+                <p className="text-muted-foreground">Загрузка статистики...</p>
+              ) : (
+                <AnalyticsDashboard stats={stats || EMPTY_STATS} />
+              )}
             </TabsContent>
 
             <TabsContent value="settings">
@@ -264,16 +254,12 @@ export default function App() {
         )}
       </main>
 
-      {/* Footer */}
       <footer className="border-t mt-12">
         <div className="container mx-auto px-6 py-6">
           <div className="flex items-center justify-between text-sm text-muted-foreground">
+            <p>© 2026 Recipe Pipeline Verifier • russianfood.com & LLM</p>
             <p>
-              © 2026 Recipe Pipeline Verifier • Powered by Tavily & OpenAI
-            </p>
-            <p>
-              Всего рецептов: {recipes.length} • Обработано:{' '}
-              {recipes.filter((r) => r.status === 'processed').length}
+              Всего рецептов: {recipes.length} • Обработано: {recipes.filter((r) => r.status === 'processed').length}
             </p>
           </div>
         </div>

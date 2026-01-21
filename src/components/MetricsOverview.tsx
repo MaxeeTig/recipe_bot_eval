@@ -1,116 +1,64 @@
 import React from 'react';
-import { TrendingUp, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Hash, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card';
-import { Progress } from './ui/progress';
+import type { RecipeStatsResponse } from '../lib/api';
 
 interface MetricsOverviewProps {
-  successRate: number;
-  averageScores: {
-    ingredientAccuracy: number;
-    dataCompleteness: number;
-    originalMatch: number;
-    overallQuality: number;
-  };
-  totalRecipes: number;
-  processedRecipes: number;
-  readyForProduction: number;
+  stats: RecipeStatsResponse;
 }
 
-export function MetricsOverview({
-  successRate,
-  averageScores,
-  totalRecipes,
-  processedRecipes,
-  readyForProduction
-}: MetricsOverviewProps) {
-  const metrics = [
-    {
-      label: 'Точность ингредиентов',
-      value: averageScores.ingredientAccuracy,
-      color: 'bg-blue-500'
-    },
-    {
-      label: 'Полнота данных',
-      value: averageScores.dataCompleteness,
-      color: 'bg-green-500'
-    },
-    {
-      label: 'Соответствие оригиналу',
-      value: averageScores.originalMatch,
-      color: 'bg-purple-500'
-    },
-    {
-      label: 'Общее качество',
-      value: averageScores.overallQuality,
-      color: 'bg-orange-500'
-    }
-  ];
+export function MetricsOverview({ stats }: MetricsOverviewProps) {
+  const { total, by_status } = stats;
+  const withErrors = by_status?.failure ?? 0;
+  const withoutErrors = (by_status?.success ?? 0) + (by_status?.new ?? 0);
+  const successRate = total > 0 ? Math.round(((by_status?.success ?? 0) / total) * 100) : 0;
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-      {/* Success Rate */}
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
       <Card>
         <CardHeader className="pb-2">
-          <CardDescription>Успешных валидаций</CardDescription>
+          <CardDescription>Всего рецептов</CardDescription>
           <CardTitle className="flex items-center gap-2">
-            <TrendingUp className="w-5 h-5 text-green-600" />
-            {successRate}%
+            <Hash className="w-5 h-5 text-muted-foreground" />
+            {total}
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <Progress value={successRate} className="h-2" />
-          <p className="text-xs text-muted-foreground mt-2">
-            {processedRecipes} из {totalRecipes} обработано
+          <p className="text-xs text-muted-foreground">
+            new: {by_status?.new ?? 0} · success: {by_status?.success ?? 0} · failure: {withErrors}
           </p>
         </CardContent>
       </Card>
 
-      {/* Production Ready */}
       <Card>
         <CardHeader className="pb-2">
-          <CardDescription>Готовы к продакшену</CardDescription>
+          <CardDescription>С ошибками</CardDescription>
+          <CardTitle className="flex items-center gap-2">
+            <AlertCircle className="w-5 h-5 text-red-600" />
+            {withErrors}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-xs text-muted-foreground">
+            {total > 0 ? Math.round((withErrors / total) * 100) : 0}% от всего
+          </p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardDescription>Без ошибок</CardDescription>
           <CardTitle className="flex items-center gap-2">
             <CheckCircle2 className="w-5 h-5 text-green-600" />
-            {readyForProduction}
+            {withoutErrors}
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <Progress
-            value={(readyForProduction / processedRecipes) * 100}
-            className="h-2"
-          />
-          <p className="text-xs text-muted-foreground mt-2">
-            {Math.round((readyForProduction / processedRecipes) * 100)}% от обработанных
+          <p className="text-xs text-muted-foreground">
+            Успешных: {by_status?.success ?? 0} · Ожидают: {by_status?.new ?? 0} ({successRate}% success)
           </p>
         </CardContent>
       </Card>
-
-      {/* Average Scores */}
-      {metrics.slice(0, 2).map((metric) => (
-        <Card key={metric.label}>
-          <CardHeader className="pb-2">
-            <CardDescription>{metric.label}</CardDescription>
-            <CardTitle className="flex items-center gap-2">
-              {metric.value.toFixed(1)} / 5
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Progress value={(metric.value / 5) * 100} className="h-2" />
-            <div className="flex gap-1 mt-2">
-              {[1, 2, 3, 4, 5].map((star) => (
-                <div
-                  key={star}
-                  className={`w-4 h-4 rounded-sm ${
-                    star <= Math.round(metric.value)
-                      ? metric.color
-                      : 'bg-gray-200'
-                  }`}
-                />
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      ))}
     </div>
   );
 }
