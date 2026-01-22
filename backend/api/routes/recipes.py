@@ -4,6 +4,7 @@ Recipe API routes.
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from typing import Optional
 import traceback
+import time
 
 from backend.models.schemas import (
     RecipeSearchRequest,
@@ -55,6 +56,7 @@ async def search_recipe(
     """
     logger.info(f"Search request: {request_data.query}")
     
+    start_time = time.time()
     try:
         # Search and extract recipe
         recipe_data = search_and_extract_recipe(request_data.query)
@@ -67,7 +69,8 @@ async def search_recipe(
             raw_recipe_text=recipe_data['recipe_text']
         )
         
-        logger.info(f"Recipe saved with ID: {recipe_id}")
+        elapsed_time = time.time() - start_time
+        logger.info(f"Recipe saved with ID: {recipe_id} (search duration: {elapsed_time:.2f}s)")
         
         return RecipeSearchResponse(
             recipe_id=recipe_id,
@@ -77,13 +80,15 @@ async def search_recipe(
         )
         
     except ValueError as e:
-        logger.error(f"Search error: {e}")
+        elapsed_time = time.time() - start_time
+        logger.error(f"Search error: {e} (duration: {elapsed_time:.2f}s)")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
     except Exception as e:
-        logger.error(f"Unexpected error during search: {e}", exc_info=True)
+        elapsed_time = time.time() - start_time
+        logger.error(f"Unexpected error during search: {e} (duration: {elapsed_time:.2f}s)", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Internal server error: {str(e)}"
@@ -424,16 +429,6 @@ async def analyze_recipe(
             provider=request_data.provider
         )
         
-        # Save analysis to database
-        recommendations_summary = analysis_report.get('root_cause', '')
-        analysis_id = db.save_error_analysis(
-            recipe_id,
-            analysis_report,
-            recommendations_summary
-        )
-        
-        logger.info(f"Analysis saved with ID: {analysis_id}")
-        
         # Apply patches from analysis when requested (reparse implies apply_patches)
         do_apply = request_data.apply_patches or request_data.reparse
         if do_apply:
@@ -499,6 +494,20 @@ async def analyze_recipe(
                     }
                 }
         
+        # Store reparse_result in analysis_report for tracking corrections
+        if reparse_result is not None:
+            analysis_report['reparse_result'] = reparse_result
+        
+        # Save analysis to database (with reparse_result if available)
+        recommendations_summary = analysis_report.get('root_cause', '')
+        analysis_id = db.save_error_analysis(
+            recipe_id,
+            analysis_report,
+            recommendations_summary
+        )
+        
+        logger.info(f"Analysis saved with ID: {analysis_id}")
+        
         return AnalysisResponse(
             analysis_id=analysis_id,
             recipe_id=recipe_id,
@@ -563,6 +572,67 @@ async def get_analyses(
     ]
     
     return AnalysisListResponse(analyses=analysis_responses)
+
+
+@router.post("/{recipe_id}/analyses/{analysis_id}/apply-patches", status_code=status.HTTP_200_OK)
+async def apply_patches_from_analysis_id(
+    recipe_id: int,
+    analysis_id: int,
+    request: Request = None,
+    request_id: str = Depends(get_request_id_dependency)
+):
+    """
+    Apply patches from a specific analysis without re-running analysis.
+    
+    Args:
+        recipe_id: Recipe ID
+        analysis_id: Analysis ID to get patches from
+        request: FastAPI request object
+        request_id: Request ID for logging
+        
+    Returns:
+        Success response with status and message
+    """
+    logger.info(f"Apply patches request for recipe {recipe_id}, analysis {analysis_id}")
+    
+    # Verify recipe exists
+    recipe = db.get_recipe_by_id(recipe_id)
+    if not recipe:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Recipe with ID {recipe_id} not found"
+        )
+    
+    # Get analysis
+    analysis = db.get_error_analysis_by_id(analysis_id)
+    if not analysis:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Analysis with ID {analysis_id} not found"
+        )
+    
+    # Verify analysis belongs to this recipe
+    if analysis['recipe_id'] != recipe_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Analysis {analysis_id} does not belong to recipe {recipe_id}"
+        )
+    
+    try:
+        # Apply patches from analysis
+        apply_patches_from_analysis(analysis['analysis_report'])
+        logger.info(f"Patches from analysis {analysis_id} applied for recipe {recipe_id}")
+        
+        return {
+            "status": "success",
+            "message": "Patches applied successfully"
+        }
+    except Exception as e:
+        logger.error(f"Error applying patches from analysis {analysis_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error applying patches: {str(e)}"
+        )
 
 
 @router.delete("/{recipe_id}", response_model=DeleteResponse)

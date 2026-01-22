@@ -1,5 +1,5 @@
 import React from 'react';
-import { Search } from 'lucide-react';
+import { Search, Loader2 } from 'lucide-react';
 import { Input } from './ui/input';
 import { Button } from './ui/button';
 
@@ -8,9 +8,10 @@ interface SearchBarProps {
   onChange: (value: string) => void;
   onSearch: () => void;
   isLoading?: boolean;
+  progressMessage?: string | null;
 }
 
-export function SearchBar({ value, onChange, onSearch, isLoading = false }: SearchBarProps) {
+export function SearchBar({ value, onChange, onSearch, isLoading = false, progressMessage = null }: SearchBarProps) {
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !isLoading) {
       onSearch();
@@ -18,22 +19,30 @@ export function SearchBar({ value, onChange, onSearch, isLoading = false }: Sear
   };
 
   return (
-    <div className="flex gap-3">
-      <div className="flex-1 relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-        <Input
-          type="text"
-          placeholder="Например: паста карбонара"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          onKeyPress={handleKeyPress}
-          className="pl-10"
-          disabled={isLoading}
-        />
+    <div className="space-y-2">
+      <div className="flex gap-3">
+        <div className="flex-1 relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+          <Input
+            type="text"
+            placeholder="Например: паста карбонара"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            onKeyPress={handleKeyPress}
+            className="pl-10"
+            disabled={isLoading}
+          />
+        </div>
+        <Button onClick={onSearch} disabled={isLoading || !value.trim()}>
+          {isLoading ? 'Поиск...' : 'Найти рецепт'}
+        </Button>
       </div>
-      <Button onClick={onSearch} disabled={isLoading || !value.trim()}>
-        {isLoading ? 'Поиск...' : 'Найти рецепт'}
-      </Button>
+      {progressMessage && (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="w-4 h-4 animate-spin" />
+          <span>{progressMessage}</span>
+        </div>
+      )}
     </div>
   );
 }

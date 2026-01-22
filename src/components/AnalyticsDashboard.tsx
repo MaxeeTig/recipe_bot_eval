@@ -1,8 +1,9 @@
 import React from 'react';
-import { Download } from 'lucide-react';
+import { Download, CheckCircle2 } from 'lucide-react';
 import { MetricsOverview } from './MetricsOverview';
 import { ErrorAnalysis } from './ErrorAnalysis';
 import { Button } from './ui/button';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card';
 import { toast } from 'sonner';
 import type { RecipeStatsResponse } from '../lib/api';
 
@@ -10,22 +11,31 @@ interface AnalyticsDashboardProps {
   stats: RecipeStatsResponse;
 }
 
-function topErrorsFromStats(stats: RecipeStatsResponse): Array<{ type: string; count: number; percentage: number }> {
-  const by = stats.by_error_type || {};
-  const failureTotal = stats.by_status?.failure ?? 0;
-  if (failureTotal === 0) return [];
+function topPatchTypesFromStats(stats: RecipeStatsResponse): Array<{ type: string; count: number; percentage: number }> {
+  const by = stats.by_patch_type || {};
+  const totalPatches = Object.values(by).reduce((sum, count) => sum + count, 0);
+  if (totalPatches === 0) return [];
+  
+  // Map patch type keys to readable labels
+  const patchTypeLabels: Record<string, string> = {
+    'unit_mapping': 'Маппинг единиц',
+    'cleanup_rules': 'Правила очистки',
+    'system_prompt_append': 'Дополнение промпта'
+  };
+  
   const entries = Object.entries(by)
+    .filter(([_, count]) => count > 0)
     .map(([type, count]) => ({
-      type,
+      type: patchTypeLabels[type] || type,
       count,
-      percentage: Math.round((count / failureTotal) * 100),
+      percentage: Math.round((count / totalPatches) * 100),
     }))
     .sort((a, b) => b.count - a.count);
-  return entries.slice(0, 10);
+  return entries;
 }
 
 export function AnalyticsDashboard({ stats }: AnalyticsDashboardProps) {
-  const topErrors = topErrorsFromStats(stats);
+  const topPatchTypes = topPatchTypesFromStats(stats);
 
   const handleExportData = () => {
     const data = { stats, exportDate: new Date().toISOString() };
@@ -57,7 +67,27 @@ export function AnalyticsDashboard({ stats }: AnalyticsDashboardProps) {
       </div>
 
       <MetricsOverview stats={stats} />
-      <ErrorAnalysis topErrors={topErrors} />
+      
+      {stats.corrections_count !== null && stats.corrections_count !== undefined && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-5 h-5 text-green-600" />
+              <CardTitle>Успешные исправления</CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-baseline gap-2">
+              <span className="text-3xl font-bold">{stats.corrections_count}</span>
+              <CardDescription>
+                рецептов успешно исправлено после применения патчей
+              </CardDescription>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      <ErrorAnalysis topPatchTypes={topPatchTypes} />
     </div>
   );
 }

@@ -13,6 +13,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from './components/ui/tabs';
 import { Toaster } from './components/ui/sonner';
 import { toast } from 'sonner';
 import { logger } from './lib/logger';
+import { loadSettings, saveSettings } from './lib/storage';
 
 type ViewMode = 'home' | 'detail' | 'settings' | 'analytics';
 
@@ -22,8 +23,9 @@ export default function App() {
   const [viewMode, setViewMode] = useState<ViewMode>('home');
   const [recipes, setRecipes] = useState<RecipeEntry[]>(mockRecipes);
   const [selectedRecipeId, setSelectedRecipeId] = useState<string | null>(null);
-  const [settings, setSettings] = useState<SettingsType>(defaultSettings);
+  const [settings, setSettings] = useState<SettingsType>(() => loadSettings());
   const [isSearching, setIsSearching] = useState(false);
+  const [searchProgress, setSearchProgress] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('home');
   const [isLoadingRecipes, setIsLoadingRecipes] = useState(true);
   const [isLoadingRecipeDetail, setIsLoadingRecipeDetail] = useState(false);
@@ -66,11 +68,48 @@ export default function App() {
     return () => { cancelled = true; };
   }, [activeTab]);
 
+  // Save settings to localStorage whenever they change
+  useEffect(() => {
+    saveSettings(settings);
+  }, [settings]);
+
   const handleSearch = async (query: string) => {
     setIsSearching(true);
+    setSearchProgress('Инициализация браузера...');
     logger.info('Recipe search initiated', { query });
+    
+    let isCancelled = false;
+    
+    // Update progress messages at different stages (based on logs: search takes ~86-89s total)
+    const progressTimer1 = setTimeout(() => {
+      if (!isCancelled) {
+        setSearchProgress('Поиск рецепта на сайте...');
+      }
+    }, 10000); // 10 seconds
+    
+    const progressTimer2 = setTimeout(() => {
+      if (!isCancelled) {
+        setSearchProgress('Извлечение данных рецепта...');
+      }
+    }, 30000); // 30 seconds
+    
+    const progressTimer3 = setTimeout(() => {
+      if (!isCancelled) {
+        setSearchProgress('Обработка содержимого рецепта...');
+      }
+    }, 60000); // 60 seconds
+    
+    const progressTimer4 = setTimeout(() => {
+      if (!isCancelled) {
+        setSearchProgress('Завершение извлечения данных...');
+      }
+    }, 90000); // 90 seconds
+    
     try {
       const res = await api.searchRecipe(query);
+      if (!isCancelled) {
+        setSearchProgress('Сохранение рецепта...');
+      }
       const full = await api.getRecipe(String(res.recipe_id));
       const entry = detailToRecipeEntry(full);
       setRecipes((prev) => [entry, ...prev]);
@@ -81,12 +120,23 @@ export default function App() {
     } catch (error: unknown) {
       const e = error as { code?: string; message?: string; response?: { data?: { detail?: string }; status?: number } };
       logger.error('Recipe search failed', { query, errorMessage: e?.response?.data?.detail || e?.message, statusCode: e?.response?.status }, error instanceof Error ? error : new Error(String(error)));
-      const msg = e?.code === 'ECONNABORTED' || e?.message?.includes('timeout')
-        ? 'Таймаут подключения к серверу'
-        : e?.response?.data?.detail || 'Не удалось найти рецепт';
+      
+      // Improved error messages
+      let msg: string;
+      if (e?.code === 'ECONNABORTED' || e?.message?.includes('timeout')) {
+        msg = 'Поиск занимает больше времени, чем ожидалось. Пожалуйста, попробуйте еще раз или проверьте подключение к интернету.';
+      } else {
+        msg = e?.response?.data?.detail || 'Не удалось найти рецепт';
+      }
       toast.error('Ошибка поиска', { description: msg });
     } finally {
+      isCancelled = true;
+      clearTimeout(progressTimer1);
+      clearTimeout(progressTimer2);
+      clearTimeout(progressTimer3);
+      clearTimeout(progressTimer4);
       setIsSearching(false);
+      setSearchProgress(null);
     }
   };
 
@@ -236,6 +286,7 @@ export default function App() {
                 onRerunRecipes={handleRerunRecipes}
                 onDeleteRecipe={handleDeleteRecipe}
                 isLoading={isSearching || isLoadingRecipes}
+                searchProgress={searchProgress}
               />
             </TabsContent>
 

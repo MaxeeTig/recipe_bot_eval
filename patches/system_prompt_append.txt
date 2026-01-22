@@ -1,0 +1,29 @@
+When you see 'по вкусу', set the amount to 0 and note it in the original_text field. Ensure all ingredients have valid amount and unit values.
+
+---
+
+Ensure that all ingredients have valid amount and unit values, even if they are 'по вкусу'. Handle 'по вкусу' cases by setting the amount to 0 and noting it in the original_text field.
+
+---
+
+When an ingredient is specified without an amount or unit, set the amount to 0 and the unit to 'по вкусу' or a similar placeholder. Ensure all ingredients have valid amount and unit values, even if they are 'по вкусу'.
+
+---
+
+When an ingredient is specified without an amount or unit, set the amount to 0 and the unit to 'по вкусу' or 'по необходимости'. Ensure all ingredients have valid amount and unit values.
+
+---
+
+When an ingredient is specified as 'по вкусу', set the amount to 0 and the unit to an empty string. Ensure all ingredients have valid amount and unit values.
+
+---
+
+When you see fractional units like '1/2 пучка', convert them to decimal form (0.5 пучка). Ensure all units are standardized and valid.
+
+---
+
+When an ingredient is specified without an amount or unit, set the amount to 0 and the unit to 'по вкусу'. Ensure all ingredients have valid amount and unit values.
+
+---
+
+When you see 'пучок', use 'пучок' as the unit. For 'по вкусу', set the amount to 0 and the unit to an empty string.

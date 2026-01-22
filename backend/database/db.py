@@ -355,19 +355,61 @@ def get_error_analyses_by_recipe_id(recipe_id: int) -> List[Dict[str, Any]]:
     return analyses
 
 
+def get_error_analysis_by_id(analysis_id: int) -> Optional[Dict[str, Any]]:
+    """
+    Get error analysis by ID.
+    
+    Args:
+        analysis_id: Analysis ID
+        
+    Returns:
+        Analysis dictionary or None if not found
+    """
+    logger.debug(f"Getting error analysis with ID: {analysis_id}")
+    init_database()
+    
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    
+    cursor.execute("""
+        SELECT * FROM error_analyses WHERE id = ?
+    """, (analysis_id,))
+    
+    row = cursor.fetchone()
+    conn.close()
+    
+    if not row:
+        logger.debug(f"Analysis with ID {analysis_id} not found")
+        return None
+    
+    analysis = dict(row)
+    # Parse JSON fields
+    if analysis['analysis_report']:
+        try:
+            analysis['analysis_report'] = json.loads(analysis['analysis_report'])
+        except json.JSONDecodeError:
+            pass
+    
+    logger.debug(f"Retrieved analysis with ID: {analysis_id}")
+    return analysis
+
+
 def get_recipe_stats(
     date_from: Optional[str] = None,
     date_to: Optional[str] = None
 ) -> Dict[str, Any]:
     """
-    Get recipe statistics: total, counts by status, and by error_type for failures.
+    Get recipe statistics: total, counts by status, by error_type for failures,
+    by patch type, and corrections count (successful reparses).
     
     Args:
         date_from: Optional ISO date or datetime; filter recipes with created_at >= date_from
         date_to: Optional ISO date or datetime (inclusive); if date-only (no 'T'), end of day is used
         
     Returns:
-        Dict with total, by_status (new, success, failure), by_error_type (for status=failure)
+        Dict with total, by_status (new, success, failure), by_error_type (for status=failure),
+        by_patch_type (unit_mapping, cleanup_rules, system_prompt_append), corrections_count
     """
     logger.debug(f"Getting recipe stats (date_from={date_from}, date_to={date_to})")
     init_database()
@@ -388,9 +430,9 @@ def get_recipe_stats(
     
     where_sql = (" WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
     
+    # Get recipe stats
     cursor.execute(f"SELECT status, error_type FROM recipes{where_sql}", params)
     rows = cursor.fetchall()
-    conn.close()
     
     total = len(rows)
     by_status = {"new": 0, "success": 0, "failure": 0}
@@ -404,11 +446,68 @@ def get_recipe_stats(
         if st == "failure" and et:
             by_error_type[et] = by_error_type.get(et, 0) + 1
     
-    return {
+    # Get patch types and corrections from error_analyses
+    by_patch_type = {"unit_mapping": 0, "cleanup_rules": 0, "system_prompt_append": 0}
+    corrections_count = 0
+    
+    # Apply date filter to error_analyses if provided
+    analysis_where_clauses = []
+    analysis_params = []
+    if date_from is not None:
+        analysis_where_clauses.append("created_at >= ?")
+        analysis_params.append(date_from)
+    if date_to is not None:
+        date_to_val = date_to if "T" in date_to else f"{date_to}T23:59:59.999999"
+        analysis_where_clauses.append("created_at <= ?")
+        analysis_params.append(date_to_val)
+    
+    analysis_where_sql = (" WHERE " + " AND ".join(analysis_where_clauses)) if analysis_where_clauses else ""
+    
+    cursor.execute(f"SELECT analysis_report FROM error_analyses{analysis_where_sql}", analysis_params)
+    analysis_rows = cursor.fetchall()
+    conn.close()
+    
+    for row in analysis_rows:
+        analysis_report_json = row["analysis_report"]
+        if not analysis_report_json:
+            continue
+        
+        try:
+            analysis_report = json.loads(analysis_report_json)
+            
+            # Count patch types
+            patches = analysis_report.get("patches")
+            if isinstance(patches, dict):
+                if patches.get("unit_mapping") and isinstance(patches["unit_mapping"], dict) and len(patches["unit_mapping"]) > 0:
+                    by_patch_type["unit_mapping"] += 1
+                if patches.get("cleanup_rules") and isinstance(patches["cleanup_rules"], list) and len(patches["cleanup_rules"]) > 0:
+                    by_patch_type["cleanup_rules"] += 1
+                if patches.get("system_prompt_append") and isinstance(patches["system_prompt_append"], str) and patches["system_prompt_append"].strip():
+                    by_patch_type["system_prompt_append"] += 1
+            
+            # Count corrections (successful reparses)
+            # Note: reparse_result might be stored in analysis_report or we check recipe status changes
+            # For now, we'll check if reparse_result is in the analysis_report
+            reparse_result = analysis_report.get("reparse_result")
+            if isinstance(reparse_result, dict) and reparse_result.get("status") == "success":
+                corrections_count += 1
+        except (json.JSONDecodeError, KeyError, TypeError):
+            # Skip malformed JSON
+            continue
+    
+    # Also count corrections by checking recipes that changed from failure to success
+    # This is a more reliable way if reparse_result isn't stored in analysis_report
+    # We'll use the primary method above, but this could be an alternative
+    
+    result = {
         "total": total,
         "by_status": by_status,
-        "by_error_type": by_error_type if by_error_type else None
+        "by_error_type": by_error_type if by_error_type else None,
+        "by_patch_type": by_patch_type if any(by_patch_type.values()) else None,
+        "corrections_count": corrections_count if corrections_count > 0 else None
     }
+    
+    return result
 
 
 def delete_recipe(recipe_id: int) -> bool:

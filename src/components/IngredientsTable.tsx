@@ -1,6 +1,5 @@
 import React from 'react';
 import { Ingredient } from '../types/recipe';
-import { Checkbox } from './ui/checkbox';
 import {
   Table,
   TableBody,
@@ -25,12 +24,11 @@ export function IngredientsTable({ ingredients, onChange }: IngredientsTableProp
             <TableHead>Кол-во (LLM)</TableHead>
             <TableHead>Ед.изм (LLM)</TableHead>
             <TableHead>Оригинал</TableHead>
-            <TableHead className="text-center">Корректно?</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {ingredients.map((ingredient, index) => (
-            <TableRow key={index} className={!ingredient.isCorrect ? 'bg-red-50' : ''}>
+            <TableRow key={index}>
               <TableCell>
                 <input
                   type="text"
@@ -57,12 +55,6 @@ export function IngredientsTable({ ingredients, onChange }: IngredientsTableProp
               </TableCell>
               <TableCell className="text-muted-foreground">
                 {ingredient.original}
-              </TableCell>
-              <TableCell className="text-center">
-                <Checkbox
-                  checked={ingredient.isCorrect}
-                  onCheckedChange={(checked) => onChange(index, 'isCorrect', checked)}
-                />
               </TableCell>
             </TableRow>
           ))}

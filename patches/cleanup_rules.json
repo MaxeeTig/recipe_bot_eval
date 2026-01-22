@@ -1,0 +1,67 @@
+[
+  {
+    "pattern": "по вкусу",
+    "replacement": "0",
+    "regex": false
+  },
+  {
+    "pattern": "Для пампушек",
+    "replacement": "",
+    "regex": false
+  },
+  {
+    "pattern": "Масло растительное для жарки",
+    "replacement": "Масло растительное для жарки - по вкусу",
+    "regex": false
+  },
+  {
+    "pattern": "1/4 стакана",
+    "replacement": "1/4 стакана",
+    "regex": false
+  },
+  {
+    "pattern": "/4 ч. л",
+    "replacement": "1/4 ч. л",
+    "regex": false
+  },
+  {
+    "pattern": "/8 ч. л",
+    "replacement": "1/8 ч. л",
+    "regex": false
+  },
+  {
+    "pattern": "/4 стакана",
+    "replacement": "3/4 стакана",
+    "regex": false
+  },
+  {
+    "pattern": "/2 стакана",
+    "replacement": "1/2 стакана",
+    "regex": false
+  },
+  {
+    "pattern": "1/2",
+    "replacement": "0.5",
+    "regex": false
+  },
+  {
+    "pattern": "для смазывания пергамента",
+    "replacement": "по вкусу",
+    "regex": false
+  },
+  {
+    "pattern": "для украшения",
+    "replacement": "по вкусу",
+    "regex": false
+  },
+  {
+    "pattern": "пучок",
+    "replacement": "пучок",
+    "regex": false
+  },
+  {
+    "pattern": "по вкусу",
+    "replacement": "по вкусу",
+    "regex": false
+  }
+]

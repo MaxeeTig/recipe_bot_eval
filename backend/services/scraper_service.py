@@ -55,6 +55,7 @@ def init_driver(headless: Optional[bool] = None) -> webdriver.Chrome:
         headless = CHROME_HEADLESS
     
     logger.info(f"Initializing Chrome driver (headless={headless})")
+    start_time = time.time()
     chrome_options = Options()
     if headless:
         chrome_options.add_argument('--headless')
@@ -69,7 +70,8 @@ def init_driver(headless: Optional[bool] = None) -> webdriver.Chrome:
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=chrome_options)
     driver.implicitly_wait(IMPLICIT_WAIT)
-    logger.debug("Chrome driver initialized successfully")
+    elapsed_time = time.time() - start_time
+    logger.info(f"Chrome driver initialized successfully (duration: {elapsed_time:.2f}s)")
     return driver
 
 
@@ -85,6 +87,7 @@ def search_recipe(driver: webdriver.Chrome, recipe_name: str) -> Optional[str]:
         URL of first recipe result, or None if no results found
     """
     logger.info(f"Searching for recipe: {recipe_name}")
+    start_time = time.time()
     try:
         # Try direct URL approach first (more reliable)
         # The site uses Windows-1251 (CP1251) encoding for Cyrillic in URLs, not UTF-8
@@ -110,7 +113,8 @@ def search_recipe(driver: webdriver.Chrome, recipe_name: str) -> Optional[str]:
                 first_recipe_url = recipe_links[0].get_attribute('href')
                 if first_recipe_url.startswith('/'):
                     first_recipe_url = BASE_URL + first_recipe_url
-                logger.info(f"Found recipe URL: {first_recipe_url}")
+                elapsed_time = time.time() - start_time
+                logger.info(f"Found recipe URL: {first_recipe_url} (search duration: {elapsed_time:.2f}s)")
                 return first_recipe_url
         except TimeoutException:
             logger.debug("Direct URL search timed out, trying form-based approach")
@@ -140,11 +144,13 @@ def search_recipe(driver: webdriver.Chrome, recipe_name: str) -> Optional[str]:
                         EC.visibility_of_element_located((By.CSS_SELECTOR, 'input[type="text"]'))
                     )
                 except TimeoutException:
-                    logger.error("Could not find search input field")
+                    elapsed_time = time.time() - start_time
+                    logger.error(f"Could not find search input field (search duration: {elapsed_time:.2f}s)")
                     return None
         
         if not search_input:
-            logger.error("Search input field not found")
+            elapsed_time = time.time() - start_time
+            logger.error(f"Search input field not found (search duration: {elapsed_time:.2f}s)")
             return None
         
         # Scroll element into view
@@ -200,18 +206,22 @@ def search_recipe(driver: webdriver.Chrome, recipe_name: str) -> Optional[str]:
                 # Ensure it's a full URL
                 if first_recipe_url.startswith('/'):
                     first_recipe_url = BASE_URL + first_recipe_url
-                logger.info(f"Found recipe URL: {first_recipe_url}")
+                elapsed_time = time.time() - start_time
+                logger.info(f"Found recipe URL: {first_recipe_url} (search duration: {elapsed_time:.2f}s)")
                 return first_recipe_url
             else:
-                logger.warning("No recipe results found")
+                elapsed_time = time.time() - start_time
+                logger.warning(f"No recipe results found (search duration: {elapsed_time:.2f}s)")
                 return None
                 
         except TimeoutException:
-            logger.warning("Timeout waiting for search results")
+            elapsed_time = time.time() - start_time
+            logger.warning(f"Timeout waiting for search results (search duration: {elapsed_time:.2f}s)")
             return None
             
     except Exception as e:
-        logger.error(f"Error during search: {e}", exc_info=True)
+        elapsed_time = time.time() - start_time
+        logger.error(f"Error during search: {e} (search duration: {elapsed_time:.2f}s)", exc_info=True)
         return None
 
 
@@ -247,6 +257,7 @@ def extract_recipe_content(driver: webdriver.Chrome, recipe_url: str) -> Optiona
         Dictionary with recipe data (title, recipe_text, url), or None on error
     """
     logger.info(f"Extracting recipe content from: {recipe_url}")
+    start_time = time.time()
     try:
         driver.get(recipe_url)
         time.sleep(PAGE_LOAD_WAIT)  # Wait for page to load
@@ -337,11 +348,13 @@ def extract_recipe_content(driver: webdriver.Chrome, recipe_url: str) -> Optiona
             'url': recipe_url
         }
         
-        logger.info(f"Extracted recipe: {result['title']} ({len(recipe_text)} text items)")
+        elapsed_time = time.time() - start_time
+        logger.info(f"Extracted recipe: {result['title']} ({len(recipe_text)} text items) (extraction duration: {elapsed_time:.2f}s)")
         return result
         
     except Exception as e:
-        logger.error(f"Error extracting recipe content: {e}", exc_info=True)
+        elapsed_time = time.time() - start_time
+        logger.error(f"Error extracting recipe content: {e} (extraction duration: {elapsed_time:.2f}s)", exc_info=True)
         return None
 
 
@@ -360,6 +373,7 @@ def search_and_extract_recipe(recipe_name: str, headless: Optional[bool] = None)
         ValueError: If recipe not found or extraction failed
     """
     logger.info(f"Starting search and extraction for: {recipe_name}")
+    start_time = time.time()
     driver = None
     try:
         driver = init_driver(headless=headless)
@@ -367,13 +381,19 @@ def search_and_extract_recipe(recipe_name: str, headless: Optional[bool] = None)
         # Search for recipe
         recipe_url = search_recipe(driver, recipe_name)
         if not recipe_url:
+            elapsed_time = time.time() - start_time
+            logger.warning(f"Could not find recipe: {recipe_name} (total duration: {elapsed_time:.2f}s)")
             raise ValueError(f"Could not find recipe: {recipe_name}")
         
         # Extract recipe content
         recipe_data = extract_recipe_content(driver, recipe_url)
         if not recipe_data:
+            elapsed_time = time.time() - start_time
+            logger.warning(f"Could not extract recipe content from: {recipe_url} (total duration: {elapsed_time:.2f}s)")
             raise ValueError(f"Could not extract recipe content from: {recipe_url}")
         
+        elapsed_time = time.time() - start_time
+        logger.info(f"Search and extraction completed successfully (total duration: {elapsed_time:.2f}s)")
         return recipe_data
         
     finally:

@@ -51,6 +51,7 @@ backend/
 | GET | `/api/recipes/{recipe_id}/parsed` | — | `ParsedRecipeDetailResponse` | Parsed schema or error blob; `error` if `new` or `failure` |
 | POST | `/api/recipes/{recipe_id}/analyze` | `AnalysisRequest` (optional `model`, `apply_patches`, `reparse`) | `AnalysisResponse` (201) | Run error analysis for `status=failure` only; save to `error_analyses`. If `apply_patches`: merge analysis `patches` into `patches/` via `patches.apply_patches_from_analysis`. If `reparse`: after apply, re-parse and update DB; response includes `reparse_result` {status, parsed_recipe?, error?} |
 | GET | `/api/recipes/{recipe_id}/analyses` | — | `AnalysisListResponse` | All analyses for a recipe |
+| POST | `/api/recipes/{recipe_id}/analyses/{analysis_id}/apply-patches` | — | `{status, message}` (200) | Apply patches from a specific analysis without re-running analysis; verifies analysis belongs to recipe |
 | DELETE | `/api/recipes/{recipe_id}` | — | `DeleteResponse` | Delete recipe and its analyses (CASCADE) |
 
 All `/api/recipes/*` handlers use `get_request_id_dependency` and return `X-Request-ID` via middleware. 4xx/5xx use `HTTPException` or global handler → `ErrorResponse` with `request_id`.
@@ -78,6 +79,10 @@ All `/api/recipes/*` handlers use `get_request_id_dependency` and return `X-Requ
 **List / Get / Delete**
 
 Straightforward `db` calls; no services. `GET .../raw` and `.../parsed` derive from `db.get_recipe_by_id`.
+
+**Apply Patches from Analysis**
+
+`POST /api/recipes/{id}/analyses/{analysis_id}/apply-patches` → `db.get_recipe_by_id`, `db.get_error_analysis_by_id` → verify analysis belongs to recipe → `patches.apply_patches_from_analysis(analysis_report)` → success response.
 
 ### Flow: Search → Parse → Analyze
 
@@ -167,7 +172,7 @@ sequenceDiagram
 - **Tables:**
   - `recipes`: id, recipe_name, source_url, raw_title, raw_recipe_text (JSON list), status (`new` | `success` | `failure`), parsed_recipe (JSON), error_type, error_message, error_traceback, llm_response_text, created_at, updated_at, parsed_at. Migration in code: add `llm_response_text` if absent.
   - `error_analyses`: id, recipe_id (FK → recipes ON DELETE CASCADE), analysis_report (JSON), recommendations_summary, created_at.
-- **db API** ([backend/database/db.py](backend/database/db.py)): `init_database`, `save_raw_recipe`, `get_recipes_by_status`, `get_recipe_by_id`, `update_recipe_success`, `update_recipe_failure`, `save_error_analysis`, `get_error_analyses_by_recipe_id`, `get_recipe_stats(date_from?, date_to?)`, `delete_recipe`.
+- **db API** ([backend/database/db.py](backend/database/db.py)): `init_database`, `save_raw_recipe`, `get_recipes_by_status`, `get_recipe_by_id`, `update_recipe_success`, `update_recipe_failure`, `save_error_analysis`, `get_error_analyses_by_recipe_id`, `get_error_analysis_by_id`, `get_recipe_stats(date_from?, date_to?)`, `delete_recipe`.
 - `from backend.database import db` resolves to this module (via [backend/database/__init__.py](backend/database/__init__.py)).
 
 ---

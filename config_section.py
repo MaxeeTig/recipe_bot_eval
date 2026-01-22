@@ -104,7 +104,7 @@ MAX_LIST_ITEMS = 50
 MAX_PARAGRAPHS = 30
 
 # Chrome options (can be extended)
-CHROME_HEADLESS = False
+CHROME_HEADLESS = True
 CHROME_OPTIONS = [
     "--no-sandbox",
     "--disable-dev-shm-usage",

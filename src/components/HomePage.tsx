@@ -11,9 +11,10 @@ interface HomePageProps {
   onRerunRecipes: (ids: string[]) => void;
   onDeleteRecipe: (id: string) => void;
   isLoading: boolean;
+  searchProgress?: string | null;
 }
 
-export function HomePage({ recipes, onSearch, onSelectRecipe, onRerunRecipes, onDeleteRecipe, isLoading }: HomePageProps) {
+export function HomePage({ recipes, onSearch, onSelectRecipe, onRerunRecipes, onDeleteRecipe, isLoading, searchProgress = null }: HomePageProps) {
   const [searchQuery, setSearchQuery] = useState('');
 
   const handleSearch = () => {
@@ -46,6 +47,7 @@ export function HomePage({ recipes, onSearch, onSelectRecipe, onRerunRecipes, on
         onChange={setSearchQuery}
         onSearch={handleSearch}
         isLoading={isLoading}
+        progressMessage={searchProgress}
       />
 
       <RecipeHistory

@@ -1,7 +1,11 @@
 import axios, { AxiosError, AxiosResponse } from 'axios';
 import { logger } from './logger';
 
-const API_BASE_URL = (import.meta.env.VITE_API_URL as string) || 'http://localhost:8003';
+// In development, use relative URLs to leverage Vite proxy
+// In production, use the configured API URL or default to localhost:8003
+const API_BASE_URL = import.meta.env.DEV
+  ? '' // Use relative URLs in dev (Vite proxy handles routing)
+  : (import.meta.env.VITE_API_URL as string) || 'http://localhost:8003';
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -98,6 +102,8 @@ export interface RecipeStatsResponse {
   total: number;
   by_status: Record<string, number>;
   by_error_type?: Record<string, number> | null;
+  by_patch_type?: Record<string, number> | null;
+  corrections_count?: number | null;
 }
 
 export interface AnalysisResponse {
@@ -119,7 +125,12 @@ export interface ParseResponse {
 export const api = {
   searchRecipe: async (query: string): Promise<RecipeSearchResponse> => {
     logger.debug('Calling searchRecipe API', { query });
-    const response = await apiClient.post<RecipeSearchResponse>('/api/recipes/search', { query });
+    // Search can take 80-90+ seconds (browser init, page loads, scraping), so use 150s timeout
+    const response = await apiClient.post<RecipeSearchResponse>(
+      '/api/recipes/search',
+      { query },
+      { timeout: 150000 } // 150 seconds for search operations (logs show ~86-89s actual duration)
+    );
     logger.debug('searchRecipe API completed', { recipeId: response.data.recipe_id, query });
     return response.data;
   },
@@ -152,7 +163,12 @@ export const api = {
     const body: { model?: string; provider?: string } = {};
     if (opts?.model) body.model = opts.model;
     if (opts?.provider) body.provider = opts.provider;
-    const response = await apiClient.post<ParseResponse>(`/api/recipes/${id}/parse`, Object.keys(body).length ? body : {});
+    // LLM parsing can take 30-60+ seconds, so use a longer timeout (120 seconds)
+    const response = await apiClient.post<ParseResponse>(
+      `/api/recipes/${id}/parse`, 
+      Object.keys(body).length ? body : {},
+      { timeout: 120000 } // 120 seconds for LLM operations
+    );
     logger.debug('parseRecipe API completed', { recipeId: id });
     return response.data;
   },
@@ -179,7 +195,12 @@ export const api = {
     if (opts?.provider) body.provider = opts.provider;
     if (opts?.apply_patches != null) body.apply_patches = opts.apply_patches;
     if (opts?.reparse != null) body.reparse = opts.reparse;
-    const response = await apiClient.post<AnalysisResponse>(`/api/recipes/${id}/analyze`, body);
+    // LLM analysis can take 30-60+ seconds, so use a longer timeout (120 seconds)
+    const response = await apiClient.post<AnalysisResponse>(
+      `/api/recipes/${id}/analyze`, 
+      body,
+      { timeout: 120000 } // 120 seconds for LLM operations
+    );
     logger.debug('analyzeRecipe API completed', { recipeId: id });
     return response.data;
   },
@@ -188,6 +209,18 @@ export const api = {
     logger.debug('Calling getRecipeAnalyses API', { recipeId: id });
     const response = await apiClient.get<{ analyses: AnalysisResponse[] }>(`/api/recipes/${id}/analyses`);
     return response.data.analyses ?? [];
+  },
+
+  applyPatchesFromAnalysis: async (
+    id: string,
+    analysisId: number
+  ): Promise<{ status: string; message: string }> => {
+    logger.debug('Calling applyPatchesFromAnalysis API', { recipeId: id, analysisId });
+    const response = await apiClient.post<{ status: string; message: string }>(
+      `/api/recipes/${id}/analyses/${analysisId}/apply-patches`
+    );
+    logger.debug('applyPatchesFromAnalysis API completed', { recipeId: id, analysisId });
+    return response.data;
   },
 
   healthCheck: async (): Promise<{ status: string; timestamp: string }> => {

@@ -22,10 +22,10 @@ env/
 .venv/
 
 # Database files
-*.db
+# *.db
 *.sqlite
 *.sqlite3
-data/*.db
+# data/*.db
 # Keep data folder structure
 !data/.gitkeep
 

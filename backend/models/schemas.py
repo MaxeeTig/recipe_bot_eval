@@ -155,3 +155,5 @@ class RecipeStatsResponse(BaseModel):
     total: int = Field(..., description="Total number of recipes")
     by_status: Dict[str, int] = Field(..., description="Counts by status: new, success, failure")
     by_error_type: Optional[Dict[str, int]] = Field(None, description="For status=failure: counts by error_type")
+    by_patch_type: Optional[Dict[str, int]] = Field(None, description="Counts by patch type: unit_mapping, cleanup_rules, system_prompt_append")
+    corrections_count: Optional[int] = Field(None, description="Number of successful reparses after applying patches")
